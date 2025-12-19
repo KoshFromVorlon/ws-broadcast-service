@@ -1,48 +1,58 @@
+import asyncio
+import logging
+from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from typing import Set
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        logger.info(f"Новое подключение. Всего клиентов: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+        logger.info(f"Клиент отключился. Осталось клиентов: {len(self.active_connections)}")
+
+    async def broadcast(self, message: str):
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_text(message)
+            except Exception:
+                self.disconnect(connection)
+
+
+manager = ConnectionManager()
 app = FastAPI()
-connections = set()
 
 
-# HTTP-эндпоинт для корня
-@app.get("/")
-async def get():
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>WebSocket Test</title>
-    </head>
-    <body>
-        <h1>WebSocket клиент</h1>
-        <button onclick="connectWS()">Подключиться</button>
-        <script>
-            function connectWS() {
-                const ws = new WebSocket("ws://127.0.0.1:8000/ws");
-                ws.onopen = () => {
-                    console.log("Соединение установлено");
-                    ws.send("Привет сервер!");
-                };
-                ws.onmessage = (event) => {
-                    console.log("Ответ:", event.data);
-                    alert("Ответ от сервера: " + event.data);
-                };
-            }
-        </script>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+@app.on_event("startup")
+async def startup_event():
+    async def send_periodic_notifications():
+        while True:
+            await asyncio.sleep(10)
+            if manager.active_connections:
+                # Добавляем текущее время до секунд
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                await manager.broadcast(f"Ping: Сервер работает ({now})")
+
+    asyncio.create_task(send_periodic_notifications())
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    connections.add(websocket)
+    await manager.connect(websocket)
     try:
         while True:
             data = await websocket.receive_text()
-            await websocket.send_text(f"Вы отправили: {data}")
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            await websocket.send_text(f"Вы отправили: {data} ({now})")
     except WebSocketDisconnect:
-        connections.remove(websocket)
+        manager.disconnect(websocket)
