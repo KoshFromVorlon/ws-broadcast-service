@@ -9,11 +9,19 @@ logger = logging.getLogger(__name__)
 
 
 async def test_notification_task():
-    """Фоновая задача рассылки уведомлений каждые 10 секунд (по ТЗ)."""
+    """Фоновая задача для рассылки уведомлений."""
     while not manager.is_shutting_down:
         await asyncio.sleep(10)
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        await manager.broadcast(f"{current_time}: Periodic Test Notification")
+
+        # Пытаемся поставить временную метку (lock) в Redis на 1 секунду
+        # Только ОДИН воркер из четырех сможет это сделать первым
+        lock_acquired = await manager.redis_client.set(
+            "notification_lock", "active", ex=1, nx=True
+        )
+
+        if lock_acquired:
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            await manager.broadcast(f"{current_time}: Periodic Test Notification")
 
 
 @router.websocket("/ws")
