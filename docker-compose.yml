@@ -1,12 +1,13 @@
-version: '3.8'
-
 services:
+  # Сервис Redis для синхронизации воркеров
   redis:
     image: redis:alpine
     container_name: redis_broker
     ports:
       - "6379:6379"
+    restart: always
 
+  # Наше FastAPI приложение
   app:
     build: .
     container_name: ws_service
@@ -14,6 +15,8 @@ services:
       - "8000:8000"
     environment:
       - REDIS_URL=redis://redis:6379
+    # Настройка для Graceful Shutdown (ТЗ: ждать до 30 минут)
+    stop_grace_period: 31m
     depends_on:
       - redis
     restart: always
