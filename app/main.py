@@ -15,7 +15,8 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # STARTUP
+    # --- STARTUP ---
+    # Кроссплатформенная обработка сигналов
     if sys.platform == "win32":
         from app.signals import graceful_shutdown_task
         signal.signal(signal.SIGINT, lambda s, f: asyncio.create_task(graceful_shutdown_task()))
@@ -26,12 +27,13 @@ async def lifespan(app: FastAPI):
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(graceful_shutdown_task()))
 
+    # Запуск фоновых задач
     manager.pubsub_task = asyncio.create_task(manager.redis_listener())
     periodic_task = asyncio.create_task(test_notification_task())
 
     yield
 
-    # SHUTDOWN
+    # --- SHUTDOWN ---
     periodic_task.cancel()
     if manager.pubsub_task:
         manager.pubsub_task.cancel()

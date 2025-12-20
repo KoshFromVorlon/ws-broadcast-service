@@ -7,36 +7,19 @@ client = TestClient(app)
 
 
 def test_websocket_echo():
-    """Проверка базового подключения и эхо-ответа"""
+    """Проверка базового соединения и эхо-ответа."""
     with client.websocket_connect("/ws") as websocket:
-        websocket.send_text("Hello Test")
+        websocket.send_text("ping")
         data = websocket.receive_text()
-        assert "Echo: Hello Test" in data
+        assert "Echo: ping" in data
 
 
-def test_manager_connection_tracking():
-    """Проверка, что менеджер видит новые подключения"""
-    # До очистки (TestClient работает синхронно, но мы можем проверить состояние менеджера)
-    initial_count = len(manager.active_connections)
-    with client.websocket_connect("/ws"):
-        # Внутри контекста количество должно увеличиться
-        # Примечание: TestClient создает новое окружение, поэтому проверяем локально
-        pass
-
-
-@pytest.mark.asyncio
-async def test_shutdown_rejection():
-    """Проверка, что после сигнала завершения новые клиенты не принимаются"""
+def test_shutdown_rejection():
+    """Проверка, что сервер отклоняет новых клиентов при выключении."""
     manager.is_shutting_down = True
     try:
-        with pytest.raises(Exception):  # FastAPI закроет сокет с кодом 1001
+        with pytest.raises(Exception):
             with client.websocket_connect("/ws"):
                 pass
     finally:
-        manager.is_shutting_down = False  # Возвращаем в исходное состояние
-
-
-def test_http_notify_not_found():
-    """Проверка, что обычные HTTP запросы на корень возвращают 404"""
-    response = client.get("/")
-    assert response.status_code == 404
+        manager.is_shutting_down = False

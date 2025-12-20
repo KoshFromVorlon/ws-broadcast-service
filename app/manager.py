@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import redis.asyncio as redis
 from typing import Set
 from fastapi import WebSocket
@@ -8,11 +9,13 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
-    def __init__(self, redis_url: str = "redis://localhost:6379"):
+    """Управляет WebSocket-соединениями и синхронизацией через Redis Pub/Sub."""
+
+    def __init__(self):
         self.active_connections: Set[WebSocket] = set()
         self.is_shutting_down = False
-        # Создаем клиент Redis. Он ленивый, ошибка будет только при попытке подключения.
-        self.redis_client = redis.from_url(redis_url, decode_responses=True)
+        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        self.redis_client = redis.from_url(self.redis_url, decode_responses=True)
         self.pubsub_task = None
 
     async def connect(self, websocket: WebSocket):
@@ -26,22 +29,22 @@ class ConnectionManager:
             logger.info(f"Client disconnected. Local active: {len(self.active_connections)}")
 
     async def broadcast(self, message: str):
-        """Отправка сообщения через Redis для всех воркеров."""
+        """Публикует сообщение в Redis для всех воркеров."""
         try:
             await self.redis_client.publish("notifications", message)
-        except Exception:
-            # Если Redis упал, шлем хотя бы локальным клиентам этого воркера
+        except Exception as e:
+            logger.error(f"Redis publish failed: {e}. Falling back to local broadcast.")
             await self._send_to_local_clients(message)
 
     async def _send_to_local_clients(self, message: str):
-        """Физическая отправка сообщения клиентам этого процесса."""
+        """Отправляет сообщение только клиентам, подключенным к этому процессу."""
         if not self.active_connections:
             return
         tasks = [conn.send_text(message) for conn in self.active_connections]
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def redis_listener(self):
-        """Подписка на канал Redis для синхронизации воркеров."""
+        """Фоновый процесс прослушивания Redis для синхронизации воркеров."""
         try:
             pubsub = self.redis_client.pubsub()
             await pubsub.subscribe("notifications")
@@ -49,7 +52,7 @@ class ConnectionManager:
                 if message["type"] == "message":
                     await self._send_to_local_clients(message["data"])
         except Exception as e:
-            logger.error(f"Redis connection failed: {e}. Running in local mode.")
+            logger.error(f"Redis listener error: {e}. Worker is isolated.")
 
 
 manager = ConnectionManager()
