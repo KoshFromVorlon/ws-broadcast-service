@@ -4,39 +4,37 @@ import signal
 import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-
-# Импортируем роутер и задачу
 from app.ws_handler import router as ws_router, test_notification_task
 from app.manager import manager
-from app.signals import graceful_shutdown_task
 
-logging.basicConfig(level=logging.INFO, format="[PID:%(process)d] %(asctime)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="[PID:%(process)d] %(asctime)s - %(message)s"
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- STARTUP ---
-    # Обработка сигналов для Windows vs Linux
+    # STARTUP
     if sys.platform == "win32":
-        # Windows не поддерживает add_signal_handler
+        from app.signals import graceful_shutdown_task
         signal.signal(signal.SIGINT, lambda s, f: asyncio.create_task(graceful_shutdown_task()))
         signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(graceful_shutdown_task()))
     else:
         loop = asyncio.get_running_loop()
+        from app.signals import graceful_shutdown_task
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(graceful_shutdown_task()))
 
-    # Запускаем фоновые процессы
     manager.pubsub_task = asyncio.create_task(manager.redis_listener())
     periodic_task = asyncio.create_task(test_notification_task())
 
     yield
 
-    # --- SHUTDOWN ---
-    # Очистка ресурсов при закрытии
+    # SHUTDOWN
+    periodic_task.cancel()
     if manager.pubsub_task:
         manager.pubsub_task.cancel()
-    periodic_task.cancel()
     await manager.redis_client.close()
 
 
