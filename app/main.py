@@ -1,19 +1,44 @@
 import asyncio
 import logging
+import signal
+import sys
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.ws_handler import router, broadcast_periodic_notifications
-from app.signals import setup_signal_handlers
 
-logging.basicConfig(level=logging.INFO, format="%(process)d - %(asctime)s - %(message)s")
+# Импортируем роутер и задачу
+from app.ws_handler import router as ws_router, test_notification_task
+from app.manager import manager
+from app.signals import graceful_shutdown_task
 
-app = FastAPI(title="Graceful WebSocket Server")
-
-app.include_router(router)
+logging.basicConfig(level=logging.INFO, format="[PID:%(process)d] %(asctime)s - %(message)s")
 
 
-@app.on_event("startup")
-async def startup_event():
-    # Настройка сигналов
-    setup_signal_handlers()
-    # Запуск фоновой рассылки
-    asyncio.create_task(broadcast_periodic_notifications())
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- STARTUP ---
+    # Обработка сигналов для Windows vs Linux
+    if sys.platform == "win32":
+        # Windows не поддерживает add_signal_handler
+        signal.signal(signal.SIGINT, lambda s, f: asyncio.create_task(graceful_shutdown_task()))
+        signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(graceful_shutdown_task()))
+    else:
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(graceful_shutdown_task()))
+
+    # Запускаем фоновые процессы
+    manager.pubsub_task = asyncio.create_task(manager.redis_listener())
+    periodic_task = asyncio.create_task(test_notification_task())
+
+    yield
+
+    # --- SHUTDOWN ---
+    # Очистка ресурсов при закрытии
+    if manager.pubsub_task:
+        manager.pubsub_task.cancel()
+    periodic_task.cancel()
+    await manager.redis_client.close()
+
+
+app = FastAPI(title="Graceful WS Server", lifespan=lifespan)
+app.include_router(ws_router)

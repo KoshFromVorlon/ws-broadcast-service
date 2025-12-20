@@ -33,5 +33,15 @@ class ConnectionManager:
             if isinstance(result, Exception):
                 logger.debug("Failed to send message to a client, they might have disconnected.")
 
+    async def redis_listener(self):
+        try:
+            pubsub = self.redis_client.pubsub()
+            await pubsub.subscribe("notifications")
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    await self._send_to_local_clients(message["data"])
+        except Exception as e:
+            logger.error(f"Redis не доступен: {e}. Работаем в локальном режиме.")
+
 
 manager = ConnectionManager()

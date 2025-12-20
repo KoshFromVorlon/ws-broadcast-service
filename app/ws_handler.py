@@ -1,16 +1,19 @@
 import asyncio
+import logging
+from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.manager import manager
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-async def broadcast_periodic_notifications():
-    """Фоновая задача для рассылки уведомлений."""
+async def test_notification_task():
+    """Фоновая задача для рассылки уведомлений каждые 10 секунд."""
     while not manager.is_shutting_down:
         await asyncio.sleep(10)
-        if manager.active_connections:
-            await manager.broadcast("Real-time notification: Server is still running")
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await manager.broadcast(f"{current_time}: Periodic Test Notification")
 
 
 @router.websocket("/ws")
@@ -22,10 +25,10 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Слушаем сообщения от клиента (keep-alive)
-            data = await websocket.receive_text()
-            await websocket.send_text(f"Echo: {data}")
+            # Ждем данных для поддержания соединения
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-    except Exception:
+    except Exception as e:
+        logger.error(f"WS Error: {e}")
         manager.disconnect(websocket)
