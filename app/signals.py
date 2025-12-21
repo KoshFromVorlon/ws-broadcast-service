@@ -1,32 +1,35 @@
 import asyncio
-import time
 import logging
 import os
+import signal
 from app.manager import manager
 
 logger = logging.getLogger(__name__)
 
 
 async def graceful_shutdown_task():
-    """Логика плавного завершения работы (лимит 30 минут)."""
     if manager.is_shutting_down:
         return
 
     manager.is_shutting_down = True
-    MAX_WAIT = 30 * 60  # 30 минут согласно ТЗ
-    start_time = time.time()
+    pid = os.getpid()
+    logger.info(f"[PID:{pid}] SHUTDOWN STARTED: Checking clients...")
 
-    logger.info("SHUTDOWN: Signal received. Waiting for clients to disconnect...")
+    try:
+        # Уменьшим время проверки до 1 секунды для отзывчивости
+        for i in range(1800):  # 30 минут
+            count = len(manager.active_connections)
+            if count == 0:
+                break
+            if i % 5 == 0:  # Логируем каждые 5 секунд
+                logger.info(f"[PID:{pid}] SHUTDOWN: {count} clients remain...")
+            await asyncio.sleep(1)
 
-    while len(manager.active_connections) > 0:
-        elapsed = time.time() - start_time
-        if elapsed > MAX_WAIT:
-            logger.warning("SHUTDOWN: 30-minute timeout reached. Forcing exit.")
-            break
-
-        logger.info(f"SHUTDOWN: Waiting for {len(manager.active_connections)} clients... ({int(elapsed)}s)")
-        await asyncio.sleep(5)
-
-    logger.info("SHUTDOWN: Complete. Exiting process.")
-    # Принудительный выход для надежной остановки воркера на любой ОС
-    os._exit(0)
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+    finally:
+        logger.info(f"[PID:{pid}] SHUTDOWN: Success. Force exiting.")
+        # Принудительно убиваем текущий процесс воркера
+        # Это решит проблему "зависания" терминала на Windows
+        os.kill(pid, signal.SIGTERM)
+        os._exit(0)
