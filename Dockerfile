@@ -11,5 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Запуск с 4 воркерами согласно ТЗ
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Запуск с 4 воркерами.
+# --no-signal-handlers позволяет нашему коду в signals.py самому управлять
+# процессом закрытия, не блокируя сокеты раньше времени.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--no-signal-handlers"]
