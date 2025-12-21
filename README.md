@@ -1,95 +1,50 @@
-# FastAPI Graceful WebSocket Service
+FastAPI Graceful WebSocket Service
+A high-performance WebSocket server built with FastAPI, featuring multi-worker synchronization via Redis and a robust
+graceful shutdown mechanism.
 
-A production-ready FastAPI implementation of a WebSocket server designed for high availability and reliability. This
-service supports cross-process synchronization and a sophisticated graceful shutdown mechanism.
+## Quick Start / Быстрый запуск
 
-## 🚀 Key Features
+1. Clone the repository / Клонирование
+   ```Bash
+   git clone https://github.com/KoshFromVorlon/ws-broadcast-service.git
+   cd ws-broadcast-service
+   ```
 
-* **Multi-worker Architecture**: Engineered to work with multiple Uvicorn workers, ensuring scalability.
-* **Redis Synchronization**: Uses **Redis Pub/Sub** to synchronize notifications across independent worker processes.
-* **Cross-Platform Compatibility**: Custom signal handling for both **Linux (POSIX)** and **Windows**, addressing
-  platform-specific event loop limitations.
-* **Advanced Graceful Shutdown**:
-* Intercepts `SIGINT` and `SIGTERM`.
-* Rejects new connections immediately upon shutdown signal.
-* Waits for active clients to disconnect naturally.
-* Enforces a **30-minute hard timeout** as a safety buffer.
+2. Run the Service / Запуск сервиса
+   # Option A: Docker Compose (Recommended / Рекомендуется)
+   Best for testing multi-worker synchronization and full environment isolation.
 
+   ```Bash
+   docker-compose up --build
+   ```
+   # Option B: PyCharm Terminal (Local / Локально). Requires Redis running on localhost:6379.
 
-* **Real-time Broadcasting**: Periodic automated notifications and on-demand broadcasting via HTTP API.
+   ```Bash
+   pip install -r requirements.txt
+   uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 4 --no-signal-handlers
+   ```
+## Testing / Тестирование
+1. Connection / Подключение
+URL: ws://127.0.0.1:8000/ws
+Postman: New -> WebSocket Request. Set environment to "No environment" (top right).
+Browser: Use "WebSocket Test Client" extension.
 
-## 🛠 Tech Stack
+2. Features / Функционал
+Broadcasting: Send any text to see it mirrored across all connected clients.
+On-Demand Status: Send test or ping to trigger a system-wide notification.
+Periodic Updates: The system sends automated notifications every 10 seconds.
 
-* **FastAPI**: Modern, high-performance web framework.
-* **Redis**: Message broker for inter-process communication.
-* **Docker & Docker Compose**: For seamless deployment and environment consistency.
-* **Pytest**: Comprehensive test suite for WebSocket lifecycle and manager logic.
+## Graceful Shutdown / Плавное завершение
+This project implements a sophisticated shutdown logic as required by the technical task:
+1. Initiate: Press Ctrl+C in the terminal.
 
-## 📦 Setup & Installation
+2. Behavior:
+The server enters "Shutdown Mode" but remains active for existing clients.
+Broadcasting continues to work for currently connected users.
+New connection requests are rejected.
+3. Termination: The process exits only when the last client disconnects or the 30-minute timeout is reached.
 
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/KoshFromVorlon/ws-broadcast-service.git
-cd ws-broadcast-service
-```
-
-### 2. Environment Setup
-
-**Local Manual Setup:**
-
-1. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-2. Run the server:
-
-```bash
-uvicorn app.main:app --workers 4
-```
-
-## 🧪 How to Test
-
-### 1. Connect via WebSocket
-
-Use a tool like [wscat](https://github.com/websockets/wscat) or a browser extension (e.g., "WebSocket Test Client"):
-
-* **URL**: `ws://localhost:8000/ws` or `ws://127.0.0.1:8000/ws`
-
-### 2. Observe Broadcasting
-
-Once connected, you will receive a **"Periodic Test Notification"** every 10 seconds.
-
-### 3. Test Graceful Shutdown
-
-1. Connect one or more clients.
-2. Press `Ctrl+C` in the server terminal.
-3. **Observe**: The server logs `SHUTDOWN: Waiting for clients...` but remains active.
-4. **Observe**: Try to connect a new client; the connection will be rejected.
-5. Disconnect your active clients.
-6. **Observe**: The server process terminates immediately after the last client leaves.
-
-## 🧠 Architecture Explanation
-
-* **Connection Management**: Unlike a simple list, we use a `ConnectionManager` with a `Set` for complexity in
-  connection tracking.
-* **Worker Isolation**: Since each Uvicorn worker is a separate OS process, they don't share memory. We solved the "
-  Broadcast Dilemma" by implementing a Redis Pub/Sub layer. When a notification is triggered, it is published to Redis
-  and consumed by all active workers simultaneously.
-* **Signal Handling**: We use a `lifespan` context manager to handle startup and shutdown tasks. For Windows support, we
-  utilize `signal.signal`, while for Linux, we use the more efficient `loop.add_signal_handler`.
-
-## 📈 Testing
-
-Run the automated test suite to verify connection handling and shutdown logic:
-
-```bash
-pytest
-```
-
-## Docker:
-1. cd PS C:\Users\tonko\PycharmProjects\ws-broadcast-service> 
-2. docker-compose up --build
-
+## Architecture
+FastAPI: Manages the WebSocket lifecycle.
+Redis Pub/Sub: Ensures all 4 workers receive and broadcast messages simultaneously.
+Signal Handling: Custom logic for SIGINT/SIGTERM ensures stability on both Linux and Windows.
