@@ -10,15 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 async def test_notification_task():
-    """Периодическая рассылка раз в 10 секунд (только 1 воркер шлет в Redis)."""
+    """
+    Фоновая задача теперь просто висит, не спамя сообщениями.
+    Мы оставляем её пустой или удаляем вызовы broadcast,
+    так как переходим на логику 'по запросу'.
+    """
     while not manager.is_shutting_down:
         await asyncio.sleep(10)
-        # Блокировка, чтобы не спамить из всех воркеров сразу
-        lock = await manager.redis_client.set("notif_lock", "active", ex=9, nx=True)
-        if lock:
-            pid = os.getpid()
-            msg = f"[{datetime.now().strftime('%H:%M:%S')}] SYSTEM (PID:{pid}): Periodic Notification"
-            await manager.broadcast(msg)
+        # Здесь больше нет автоматического broadcast, чтобы не загромождать окна
 
 
 @router.websocket("/ws")
@@ -31,11 +30,27 @@ async def websocket_endpoint(websocket: WebSocket):
     pid = os.getpid()
 
     try:
-        await websocket.send_text(f"Connected to worker PID: {pid}")
+        # 1. Приветственное сообщение с полной информацией при подключении
+        welcome_time = datetime.now().strftime('%H:%M:%S')
+        await websocket.send_text(
+            f" Welcome! Connected to Worker [PID: {pid}] at {welcome_time}. "
+            f"Type 'test' or 'ping' for global status check."
+        )
+
         while True:
             data = await websocket.receive_text()
-            # Рассылаем всем через Redis
-            await manager.broadcast(f"User (via PID:{pid}) says: {data}")
+
+            # 2. Обработка команд 'test' или 'ping' (Уведомление по запросу)
+            if data.lower() in ["test", "ping"]:
+                current_time = datetime.now().strftime('%H:%M:%S')
+                # Делаем глобальную рассылку всем клиентам
+                await manager.broadcast(
+                    f"[{current_time}]  TEST REQUEST from Client on PID:{pid}: System is Active"
+                )
+            else:
+                # 3. Обычные сообщения от пользователей
+                await manager.broadcast(f"User (via PID:{pid}) says: {data}")
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:

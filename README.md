@@ -56,7 +56,7 @@ uvicorn app.main:app --workers 4
 
 Use a tool like [wscat](https://github.com/websockets/wscat) or a browser extension (e.g., "WebSocket Test Client"):
 
-* **URL**: `ws://localhost:8000/ws`
+* **URL**: `ws://localhost:8000/ws` or `ws://127.0.0.1:8000/ws`
 
 ### 2. Observe Broadcasting
 
@@ -88,4 +88,8 @@ Run the automated test suite to verify connection handling and shutdown logic:
 ```bash
 pytest
 ```
+
+## Docker:
+1. cd PS C:\Users\tonko\PycharmProjects\ws-broadcast-service> 
+2. docker-compose up --build
 
