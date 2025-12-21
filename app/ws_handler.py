@@ -10,18 +10,15 @@ logger = logging.getLogger(__name__)
 
 
 async def test_notification_task():
-    """Периодическая рассылка (уже использует broadcast)."""
+    """Периодическая рассылка раз в 10 секунд (только 1 воркер шлет в Redis)."""
     while not manager.is_shutting_down:
         await asyncio.sleep(10)
-        # Блокировка в Redis, чтобы слал только один воркер
-        lock_acquired = await manager.redis_client.set(
-            "notification_lock", "active", ex=1, nx=True
-        )
-        if lock_acquired:
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Блокировка, чтобы не спамить из всех воркеров сразу
+        lock = await manager.redis_client.set("notif_lock", "active", ex=9, nx=True)
+        if lock:
             pid = os.getpid()
-            # Глобальная рассылка через Redis
-            await manager.broadcast(f"[{current_time}] SYSTEM (PID:{pid}): Periodic Notification")
+            msg = f"[{datetime.now().strftime('%H:%M:%S')}] SYSTEM (PID:{pid}): Periodic Notification"
+            await manager.broadcast(msg)
 
 
 @router.websocket("/ws")
@@ -34,22 +31,13 @@ async def websocket_endpoint(websocket: WebSocket):
     pid = os.getpid()
 
     try:
-        # Приветственное сообщение только подключившемуся
         await websocket.send_text(f"Connected to worker PID: {pid}")
-
         while True:
             data = await websocket.receive_text()
-
-            # ДЕМОНСТРАЦИЯ BROADCAST:
-            # Вместо прямого ответа (websocket.send_text),
-            # мы отправляем сообщение в manager.broadcast
-            broadcast_message = f"User (via PID:{pid}) says: {data}"
-
-            # Это сообщение уйдет в Redis и вернется ВСЕМ клиентам на ВСЕХ воркерах
-            await manager.broadcast(broadcast_message)
-
+            # Рассылаем всем через Redis
+            await manager.broadcast(f"User (via PID:{pid}) says: {data}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
-        logger.error(f"WS Error: {e}")
+        logger.error(f"WS Error on PID {pid}: {e}")
         manager.disconnect(websocket)
