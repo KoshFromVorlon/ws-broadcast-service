@@ -11,13 +11,13 @@ logger = logging.getLogger(__name__)
 
 async def test_notification_task():
     """
-    Периодическая рассылка уведомлений всем активным клиентам (требование ТЗ).
-    Использует Redis lock, чтобы только один воркер из четырех отправлял сообщение.
+    Periodic notification task sent to all active clients (TZ requirement).
+    Uses a Redis lock to ensure only one of the four workers sends the message.
     """
     while not manager.is_shutting_down:
         await asyncio.sleep(10)
 
-        # Атомарная блокировка в Redis на 9 секунд, чтобы избежать дублей от разных воркеров
+        # Atomic Redis lock for 9 seconds to prevent duplicate messages from multiple workers
         lock_acquired = await manager.redis_client.set(
             "notification_lock", "active", ex=9, nx=True
         )
@@ -25,7 +25,7 @@ async def test_notification_task():
         if lock_acquired:
             current_time = datetime.now().strftime("%H:%M:%S")
             pid = os.getpid()
-            # Глобальный broadcast через Redis
+            # Global broadcast via Redis Pub/Sub
             await manager.broadcast(
                 f"[{current_time}] SYSTEM (PID:{pid}): Periodic Notification (Every 10s)"
             )
@@ -33,17 +33,17 @@ async def test_notification_task():
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # Если инициирован процесс завершения, отклоняем новые подключения
+    # Reject new connections if the shutdown process has been initiated
     if manager.is_shutting_down:
         await websocket.close(code=1001)
         return
 
-    # Регистрируем новое соединение
+    # Register the new connection
     await manager.connect(websocket)
     pid = os.getpid()
 
     try:
-        # 1. Приветственное сообщение при подключении (полная информация)
+        # 1. Welcome message sent upon connection (full info)
         welcome_time = datetime.now().strftime('%H:%M:%S')
         await websocket.send_text(
             f" Welcome! Connected to Worker [PID: {pid}] at {welcome_time}. "
@@ -51,21 +51,21 @@ async def websocket_endpoint(websocket: WebSocket):
         )
 
         while True:
-            # Ожидание сообщения от клиента
+            # Wait for incoming client messages
             data = await websocket.receive_text()
 
-            # 2. Обработка команд (уведомление по запросу согласно ТЗ)
+            # 2. Command handling (on-demand notifications per TZ requirement)
             if data.lower() in ["test", "ping"]:
                 current_time = datetime.now().strftime('%H:%M:%S')
                 await manager.broadcast(
                     f"[{current_time}] TEST REQUEST from Client on PID:{pid}: System is Active"
                 )
             else:
-                # 3. Обычный broadcast пользовательского сообщения
+                # 3. Standard broadcast of user messages
                 await manager.broadcast(f"User (via PID:{pid}) says: {data}")
 
     except WebSocketDisconnect:
-        # Удаляем клиента из списка при отключении
+        # Remove client from the local manager upon disconnection
         manager.disconnect(websocket)
     except Exception as e:
         logger.error(f"WS Error on PID {pid}: {e}")
