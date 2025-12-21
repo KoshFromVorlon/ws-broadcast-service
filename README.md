@@ -13,9 +13,13 @@ graceful shutdown mechanism.
 2. Run the Service / Запуск сервиса
    # Option A: Docker Compose (Recommended / Рекомендуется)
    Best for testing multi-worker synchronization and full environment isolation.
-
+   Terminal1:
    ```Bash
    docker-compose up --build
+   ```
+   Terminal2:
+   ```Bash
+   docker-compose logs -f
    ```
    # Option B: PyCharm Terminal (Local / Локально). Requires Redis running on localhost:6379.
 

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import signal
 import sys
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.ws_handler import router as ws_router, test_notification_task
@@ -16,24 +17,24 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- STARTUP ---
-    # Кроссплатформенная обработка сигналов
-    if sys.platform == "win32":
-        from app.signals import graceful_shutdown_task
-        signal.signal(signal.SIGINT, lambda s, f: asyncio.create_task(graceful_shutdown_task()))
-        signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(graceful_shutdown_task()))
-    else:
-        loop = asyncio.get_running_loop()
-        from app.signals import graceful_shutdown_task
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(graceful_shutdown_task()))
+    from app.signals import graceful_shutdown_task
 
-    # Запуск фоновых задач
+    # Настраиваем перехват сигналов
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        if sys.platform != "win32":
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(graceful_shutdown_task()))
+        else:
+            # Для Windows внутри Docker
+            signal.signal(sig, lambda s, f: asyncio.create_task(graceful_shutdown_task()))
+
     manager.pubsub_task = asyncio.create_task(manager.redis_listener())
     periodic_task = asyncio.create_task(test_notification_task())
 
     yield
 
     # --- SHUTDOWN ---
+    # Позволяем фоновым задачам завершиться корректно
     periodic_task.cancel()
     if manager.pubsub_task:
         manager.pubsub_task.cancel()
