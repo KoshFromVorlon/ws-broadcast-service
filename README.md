@@ -38,6 +38,20 @@ Broadcasting: Send any text to see it mirrored across all connected clients.
 On-Demand Status: Send test or ping to trigger a system-wide notification.
 Periodic Updates: The system sends automated notifications every 10 seconds.
 
+## Automated Unit Tests
+The project includes a comprehensive suite of asynchronous tests covering connection management, Redis synchronization, 
+and shutdown logic.
+
+1. Requirements
+Ensure you have the testing dependencies installed:
+   ```bash
+   pip install pytest pytest-asyncio httpx
+   ```
+2. Running Tests
+   ```bash
+   pytest
+   ```
+
 ## Graceful Shutdown
 This project implements a sophisticated shutdown logic as required by the technical task:
 1. Initiate: Press Ctrl+C in the terminal.
