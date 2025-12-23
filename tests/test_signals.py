@@ -1,4 +1,3 @@
-# tests/test_signals.py
 import pytest
 import asyncio
 from unittest.mock import patch, MagicMock

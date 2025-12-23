@@ -13,6 +13,7 @@ graceful shutdown mechanism.
 2. Run the Service
    # Option A: Docker Compose (Recommended)
    Best for testing multi-worker synchronization and full environment isolation.
+
    Terminal1:
    ```Bash
    docker-compose up --build
